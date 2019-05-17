@@ -28,7 +28,7 @@ lemmatizer = WordNetLemmatizer()
 #     max_len = max(max_len, len(vars(i)['Text']))
 # max_len
 # %%
-data_path = 'E:\\workspace\\python-workspace\\NLPTry\\deep learning text classification\\'
+data_path = 'E:\\workspace\\python-workspace\\NLPTry\\2 - deep learning text classification\\'
 vocab_path = 'E:\\workspace\\jupyter_notebook\\.vector_cache\\'
 classes = 5
 max_len = 56
@@ -120,7 +120,6 @@ class TextCNN(nn.Module):
             for k in kernel_sizes])
         self.fc = nn.Linear(len(kernel_sizes) * num_filters, output_size)
         self.dropout = nn.Dropout(drop_prob)
-        self.softmax = nn.Softmax()
 
     def conv_and_pool(self, x, conv):
         # squeeze last dim to get size: (batch_size, num_filters, conv_seq_length, 1) -> (batch_size, num_filters, conv_seq_length)
@@ -140,7 +139,7 @@ class TextCNN(nn.Module):
         x = t.cat(conv_results, 1)
         x = self.dropout(x)
         logits = self.fc(x)
-        return self.softmax(logits)
+        return F.softmax(logits, dim=0)
 
 
 # %%
@@ -197,32 +196,15 @@ num_correct = 0
 model.eval()
 # iterate over test data
 res = np.empty([len(test_dl.dl.dataset), 2])
+index = 0
 for inputs, labels in test_dl:
     if use_gpu:
         model.cuda()
         inputs, labels = inputs.cuda(), labels.cuda()
     output = model(inputs.transpose(1, 0))
-    predict_label = np.argmax(output, axis=0)
-    t.cat([labels, predict_label], 0)
-    break
-# test_losses = [] # track loss
-# num_correct = 0
-# model.eval()
-# # iterate over test data
-# for inputs, labels in test_dl:
-#
-#     if(use_gpu):
-#         inputs, labels = inputs.cuda(), labels.cuda()
-#     output = model(inputs)
-#     test_loss = criterion(output.squeeze(), labels.float())
-#     test_losses.append(test_loss.item())
-#     predict_label = np.argmax(output, axis=0)
-#     # compare predictions to true label
-#     correct = np.sum(predict_label == labels)
-#     num_correct += correct
-#
-# print("Test loss\t{:.6f}".format(np.mean(test_losses)))
-# test_acc = num_correct/len(test_dl.dl.dataset)
-# print("Test accuracy\t{:.3f}".format(test_acc))
-# %%
+    predict_label = np.argmax(output.detach().cpu(), axis=1)
+    num = len(predict_label)
+    res[index:index+num] = t.stack((labels.squeeze().detach().cpu(), predict_label.float()), 0).transpose(1, 0)
+    index += num
+# print(index, len(test_dl.dl.dataset))
 
