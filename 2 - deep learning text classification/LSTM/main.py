@@ -24,12 +24,11 @@ data_path = 'E:\\workspace\\python-workspace\\NLPTry\\2 - deep learning text cla
 vocab_path = 'E:\\workspace\\jupyter_notebook\\.vector_cache\\'
 classes = 5
 max_len = 56
-num_filters = 100
-kernel_sizes = [3, 4, 5]
+hidden_dim = 100
+num_layers = 2
+freeze_embeddings = True
 lr = 0.001
 batch_size = 32
-freeze_embeddings = True
-drop_prob = 0.3
 epochs = 10
 print_every = 100
 device = t.device('cuda:0')
@@ -98,48 +97,42 @@ test_dl = BatchWrapper(test_iter, "text", ["label"])
 
 # next(train_dl.__iter__())
 # %%
-class TextCNN(nn.Module):
-    def __init__(self, embeddings, vocab_size, embedding_dim, output_size,
-                 num_filters=100, kernel_sizes=None, freeze_embeddings=True, drop_prob=0.3):
-        if kernel_sizes is None:
-            kernel_sizes = [3, 4, 5]
-        super(TextCNN, self).__init__()
-        self.num_filters = num_filters
+class LSTMBase(nn.Module):
+    def __init__(self, embeddings, vocab_size, embedding_dim, classes, hidden_dim, batch_size, num_layers=2, freeze_embeddings=True, prob=0.2):
+        super(LSTMBase, self).__init__()
         self.embedding_dim = embedding_dim
+        self.hidden_dim = hidden_dim
+        self.batch_size = batch_size
+        self.num_layers = num_layers
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.embedding.weight = nn.Parameter(embeddings)  # all vectors
-        if freeze_embeddings:
-            self.embedding.requires_grad = False
-        self.convs = nn.ModuleList([
-            nn.Conv2d(1, num_filters, (k, embedding_dim))
-            for k in kernel_sizes])
-        self.fc = nn.Linear(len(kernel_sizes) * num_filters, output_size)
-        self.dropout = nn.Dropout(drop_prob)
+        self.embedding.weight = nn.Parameter(embeddings, requires_grad=freeze_embeddings)
+        self.lstm = nn.LSTM(embedding_dim, self.hidden_dim, num_layers=num_layers, dropout=prob, batch_first=True)
+        self.dropout = nn.Dropout(0.3)
+        self.fc = nn.Linear(self.hidden_dim, classes)
+        self.init = self.init_hidden()
 
-    def conv_and_pool(self, x, conv):
-        # squeeze last dim to get size: (batch_size, num_filters, conv_seq_length, 1) -> (batch_size, num_filters, conv_seq_length)
-        x = F.relu(conv(x)).squeeze()
-        # 1D pool over conv_seq_length, squeeze to get size: (batch_size, num_filters)
-        x_max = F.max_pool1d(x, x.size(2)).squeeze(2)
-        return x_max
+    def init_hidden(self, batch_size=None):
+        if batch_size == None:
+            batch_size = self.batch_size
+        h0 = t.zeros((self.num_layers, batch_size, self.hidden_dim))
+        c0 = t.zeros((self.num_layers, batch_size, self.hidden_dim))
+        if use_gpu:
+            h0 = h0.cuda()
+            c0 = c0.cuda()
+        return h0, c0
 
-    def forward(self, x):
+    def forward(self, input):
         # (batch_size, seq_length, embedding_dim)
-        embeddings = self.embedding(x)
-        # embeddings.unsqueeze(1) creates a channel dimension that conv layers expect
-        # (batch_size, channel, seq_length, embedding_dim)
-        embeddings = embeddings.unsqueeze(1)
-        conv_results = [self.conv_and_pool(embeddings, conv) for conv in self.convs]
-        # concatenate results
-        x = t.cat(conv_results, 1)
-        x = self.dropout(x)
-        logits = self.fc(x)
-        return F.softmax(logits, dim=0)
+        embeddings = self.embedding(input)
+        h, c = self.init_hidden(embeddings.size()[0])
+        out, (h, c) = self.lstm(embeddings, (h, c))
+        out = self.dropout(out[:, -1, :])
+        out = self.fc(out)
+        return F.softmax(out, dim=0)
 
 
 # %%
-model = TextCNN(weight_matrix, weight_matrix.size(0), weight_matrix.size(1), classes, num_filters, kernel_sizes,
-                freeze_embeddings, drop_prob)
+model = LSTMBase(weight_matrix, weight_matrix.size(0), weight_matrix.size(1), classes, hidden_dim, batch_size, num_layers, freeze_embeddings)
 print(model)
 # %%
 criterion = nn.CrossEntropyLoss()
@@ -186,6 +179,7 @@ def train(model, train_loader, valid_loader, epochs, print_every=100):
 
 # %%
 # train(model, train_dl, valid_dl, epochs, print_every=print_every)
+
 # %%
 test_losses = []  # track loss
 num_correct = 0
@@ -202,4 +196,4 @@ for inputs, labels in test_dl:
     num = len(predict_label)
     res[index:index + num] = t.stack((labels.squeeze().detach().cpu(), predict_label.float()), 0).transpose(1, 0)
     index += num
-print(index, len(test_dl.dl.dataset))
+# print(index, len(test_dl.dl.dataset))
