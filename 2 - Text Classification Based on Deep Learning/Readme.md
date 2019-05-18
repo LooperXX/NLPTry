@@ -1,4 +1,4 @@
-# DeepLearning Text Classification 
+# Text Classification Based on Deep Learning 
 
 Based on [Pytorch](https://github.com/pytorch/pytorch) and [TorchText](https://github.com/pytorch/text)
 - [Dataset](https://www.kaggle.com/c/sentiment-analysis-on-movie-reviews) 
@@ -6,7 +6,7 @@ Based on [Pytorch](https://github.com/pytorch/pytorch) and [TorchText](https://g
 
 ## TextCNN
 
-- [Paper](https://arxiv.org/abs/1408.5882)  
+- [Convolutional Neural Networks for Sentence Classification](https://arxiv.org/abs/1408.5882)  
 
 ## LSTM
 
