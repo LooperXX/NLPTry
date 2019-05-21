@@ -228,7 +228,7 @@ def load_file(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
 
-def predict_test(path, parameters, dataset):
+def predict_test(path, parameters, dataset, feature):
     df_train = pd.read_csv(path, sep='\t')
     # clean, tokenize and lemmatize
     df_train['Phrase'] = df_train['Phrase'].str.lower()
@@ -244,27 +244,41 @@ def predict_test(path, parameters, dataset):
                 words.append(i)
         words_list.append(lemma_words)
     X_data = np.array(words_list)
-    predict_label, _ = predict_labels(X_data, None, parameters, dataset.get_bag_of_words)
+    predict_label, _ = predict_labels(X_data, None, parameters, feature)
     sub_file = pd.read_csv('data/sampleSubmission.csv',sep=',')
     sub_file.Sentiment = predict_label
     sub_file.to_csv('Submission.csv',index=False)
 
 def main():
-    # dataset = SAOMR()
+    # batch32_bagofwords_shuffle_lr0.01_epoch100_hidden128
+    # batch [1,16,32,64,128,256]
+    # feature bag_of_words / n_gram
+    # shuffle True / false
+
+    shuffle = True
+    # dataset = SAOMR(shuffle=shuffle)
     # save_file(dataset, 'dataset.pkl')
     dataset = load_file('dataset.pkl')
     learning_rate = 0.1
     epochs = 100
-    layers_dims = (dataset.vocab_size, 128, 5)
-    feature = dataset.get_bag_of_words
-    # layers_dims = (dataset.ngram_size,128,5)
-    # feature = dataset.get_n_gram
+    hidden = 128
+    batch_size = 32  # max 124848(BGD) 1(SGD) 16,32,64,128,256(mini-batch)
+    # feature = dataset.get_bag_of_words
+    # layers_dims = (dataset.vocab_size, hidden, 5)
+    feature = dataset.get_n_gram
+    layers_dims = (dataset.ngram_size, hidden, 5)
     parameters = two_layer_model(dataset.X_train, dataset.Y_train, dataset.X_validate, dataset.Y_validate, layers_dims,
-                                 learning_rate, epochs, feature, print_cost=True, batch_size=32)
+                                 learning_rate, epochs, feature, print_cost=True, batch_size=batch_size)
     # accuracy = predict_labels(dataset.X_test, dataset.Y_test, parameters, feature)
     # print('test_accuracy', accuracy)
-    predict_test('test.tsv', parameters, dataset)
+    predict_test('test.tsv', parameters, dataset, feature)
 
 
+
+    parameters = two_layer_model(dataset.X_train, dataset.Y_train, dataset.X_validate, dataset.Y_validate, layers_dims,
+                                 learning_rate, epochs, feature, print_cost=True, batch_size=batch_size)
+    # accuracy = predict_labels(dataset.X_test, dataset.Y_test, parameters, feature)
+    # print('test_accuracy', accuracy)
+    predict_test('../input/test.tsv', parameters, dataset, feature)
 if __name__ == "__main__":
     main()

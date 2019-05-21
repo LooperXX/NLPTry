@@ -1,4 +1,6 @@
 # %%
+import time
+
 import numpy as np
 import torch as t
 import torch.nn as nn
@@ -22,6 +24,7 @@ lemmatizer = WordNetLemmatizer()
 # %%
 data_path = 'E:\\workspace\\python-workspace\\NLPTry\\2 - Text Classification Based on Deep Learning\\'
 vocab_path = 'E:\\workspace\\jupyter_notebook\\.vector_cache\\'
+load_model_path = None
 classes = 5
 max_len = 56
 hidden_dim = 100
@@ -130,9 +133,20 @@ class LSTMBase(nn.Module):
         out = self.fc(out)
         return F.softmax(out, dim=0)
 
+    def load(self, path):
+        self.load_state_dict(t.load(path))
+
+    def save(self, name=None):
+        if name is None:
+            prefix = 'checkpoints/TC_LSTM' + '_'
+            name = time.strftime(prefix + '%m%d_%H_%M_%S.pth')
+        t.save(self.state_dict(), name)
+        return name
 
 # %%
 model = LSTMBase(weight_matrix, weight_matrix.size(0), weight_matrix.size(1), classes, hidden_dim, batch_size, num_layers, freeze_embeddings)
+if load_model_path is not None:
+    model.load(load_model_path)
 print(model)
 # %%
 criterion = nn.CrossEntropyLoss()
@@ -175,7 +189,7 @@ def train(model, train_loader, valid_loader, epochs, print_every=100):
                       "Loss\t{:.6f}...".format(loss.item()),
                       "Val_Loss\t{:.6f}".format(np.mean(val_losses)),
                       "Val_Accuracy\t{:.6f}...".format(accuracy))
-
+        model.save()
 
 # %%
 # train(model, train_dl, valid_dl, epochs, print_every=print_every)
