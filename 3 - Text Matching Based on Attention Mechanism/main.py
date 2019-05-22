@@ -4,12 +4,13 @@ import pickle
 import re
 import time
 from struct import unpack
-
+import math
 import numpy as np
 import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
 from nltk import tokenize
+from tqdm import tqdm
 
 np.random.seed(2)
 t.manual_seed(2)
@@ -32,7 +33,7 @@ freeze_index = None
 u_min = -0.5
 u_max = 0.5
 data_source_path = './data/snli_1.0'
-data_path = './data/data.pkl'
+data_path = './data/snli_1.0.pkl'
 embedding_source_path = '../../GoogleNews-vectors-negative300.bin'
 embedding_path = './data/embedding.pkl'
 load_model_path = None
@@ -105,10 +106,11 @@ class WordEmbedding(object):
                 wid += 1
             freeze_index = wid
             vocab_set = set(vocabulary)
-            one_vec = t.empty((1, lstm_size)).uniform_(u_min, u_max).float()
+
             for vocab in vocab_set:
                 if vocab in self.word_to_id:
                     continue
+                one_vec = t.empty((1, embedding_size)).uniform_(u_min, u_max).float().numpy()
                 em_list.append(one_vec)
                 self.word_to_id[vocab] = wid
                 self.id_to_word[wid] = vocab
@@ -245,24 +247,15 @@ class SNLI(object):
         return train_set, dev_set, test_set
 
 
-#  lstm_size: the size of the LSTM cell.
-#  hidden_size: the size of the fully connected layers.
-#  drop_rate: Dropout rate.
-#  beta: the L2 regularizer parameter for the fully connected layers.
-#  rep_1: the matrix of word embeddings for the premise sentence.
-#  len_1: the true length of the premise sentence.
-#  mask_1: binary vector specifying true words (1) and dummy words used for padding (0).
-#  rep_2: the matrix of word embeddings for the hypothesis sentence.
-#  len_2: the true length of the hypothesis sentence.
 class TwoWayWordByWordAttentionLSTM(nn.Module):
     def __init__(self, lstm_size, hidden_size, dropout_rate, embeddings, class_num, beta):
         super(TwoWayWordByWordAttentionLSTM, self).__init__()
         self.lstm_size = lstm_size
         self.hidden_size = hidden_size
-        # self.embeddings = embeddings
-        # embedding_size = self.embeddings.weight.size()[1]
-        self.embeddings = nn.Embedding(1000, 300)
-        embedding_size = 300
+        self.embeddings = embeddings
+        embedding_size = self.embeddings.weight.size()[1]
+        # self.embeddings = nn.Embedding(1000, 300)
+        # embedding_size = 300
         self.dropout_rate = dropout_rate
 
         # The LSTMs: lstm1 - premise; lstm2 - hypothesis
@@ -270,7 +263,7 @@ class TwoWayWordByWordAttentionLSTM(nn.Module):
         self.lstm2 = nn.LSTM(embedding_size, lstm_size, 1)
 
         # The fully connectedy layers
-        self.linear1 = nn.Linear(lstm_size, hidden_size)
+        self.linear1 = nn.Linear(lstm_size * 2, hidden_size)
 
         # The fully connectedy layer for softmax
         self.linear2 = nn.Linear(hidden_size, class_num)
@@ -287,133 +280,125 @@ class TwoWayWordByWordAttentionLSTM(nn.Module):
         return (t.zeros(1, batch_size, self.lstm_size, requires_grad=False).float(),
                 t.zeros(1, batch_size, self.lstm_size, requires_grad=False).float())
 
-    # Forward propagation
-    def forward(self, rep1, len1, mask1, rep2, len2):
-        # One-Way Attention Compute context vectors using attention.
-        def context_vector(h_t, out, WyY):
-            WhH = t.matmul(h_t, self.Wh)
+    # Compute context vectors using attention.
+    def context_vector(self, h_t, out, WyY, mask, batch_size, max_seq_len):
+        WhH = t.matmul(h_t, self.Wh)
 
-            # Use mask to ignore the outputs of the padding part in premise
-            shape = WhH.size()
-            WhH = WhH.view(shape[0], 1, shape[1])
-            WhH = WhH.expand(shape[0], max_seq_len, shape[1])
+        # Use mask to ignore the outputs of the padding part in premise
+        shape = WhH.size()
+        WhH = WhH.view(shape[0], 1, shape[1])
+        WhH = WhH.expand(shape[0], max_seq_len, shape[1])
 
-            M1 = mask1.float()
-            shape = M1.size()
-            M = M1.view(shape[0], shape[1], 1).float()
-            M = M.expand(shape[0], shape[1], self.lstm_size)
+        M1 = mask.float()
+        shape = M1.size()
+        M = M1.view(shape[0], shape[1], 1).float()
+        M = M.expand(shape[0], shape[1], self.lstm_size)
 
-            WhH = WhH * M
-            M = t.tanh(WyY + WhH)
-            aW = self.aW.view(1, 1, -1)
-            aW = aW.expand(batch_size, max_seq_len, aW.size()[2])
+        WhH = WhH * M
+        M = t.tanh(WyY + WhH)
+        aW = self.aW.view(1, 1, -1)
+        aW = aW.expand(batch_size, max_seq_len, aW.size()[2])
 
-            # Compute batch dot: the first step of a softmax
-            batch_dot = M * aW
-            batch_dot = t.sum(batch_dot, 2)
+        # Compute batch dot: the first step of a softmax
+        batch_dot = M * aW
+        batch_dot = t.sum(batch_dot, 2)
 
-            # Avoid overflow
-            max_by_column, _ = t.max(batch_dot, 1)
-            max_by_column = max_by_column.view(-1, 1)
-            max_by_column = max_by_column.expand(max_by_column.size()[0], max_seq_len)
+        # Avoid overflow
+        max_by_column, _ = t.max(batch_dot, 1)
+        max_by_column = max_by_column.view(-1, 1)
+        max_by_column = max_by_column.expand(max_by_column.size()[0], max_seq_len)
 
-            batch_dot = t.exp(batch_dot - max_by_column) * M1
+        batch_dot = t.exp(batch_dot - max_by_column) * M1
 
-            # Partition function and attention:
-            # the second step of a softmax, use mask to ignore the padding
-            partition = t.sum(batch_dot, 1)
-            partition = partition.view(-1, 1)
-            partition = partition.expand(partition.size()[0], max_seq_len)
-            attention = batch_dot / partition
+        # Partition function and attention:
+        # the second step of a softmax, use mask to ignore the padding
+        partition = t.sum(batch_dot, 1)
+        partition = partition.view(-1, 1)
+        partition = partition.expand(partition.size()[0], max_seq_len)
+        attention = batch_dot / partition
 
-            # compute context vector
-            shape = attention.size()
-            attention = attention.view(shape[0], shape[1], 1)
-            attention = attention.expand(shape[0], shape[1], self.lstm_size)
+        # compute context vector
+        shape = attention.size()
+        attention = attention.view(shape[0], shape[1], 1)
+        attention = attention.expand(shape[0], shape[1], self.lstm_size)
 
-            cv_t = out * attention
-            cv_t = t.sum(cv_t, 1)
+        cv_t = out * attention
+        cv_t = t.sum(cv_t, 1)
 
-            return cv_t
+        return cv_t
 
-        # Two-Way Attention Compute context vectors using attention.
-        def context_vector_(h_t, out, WyY, context_vector):
-            WhH = t.matmul(h_t, self.Wh)
-            WrC = t.matmul(context_vector, self.Wr)
-            WhH = WhH + WrC
-            # Use mask to ignore the outputs of the padding part in premise
-            shape = WhH.size()
-            WhH = WhH.view(shape[0], 1, shape[1])
-            WhH = WhH.expand(shape[0], max_seq_len, shape[1])
+    # Word-by-Word Attention Compute context vectors using attention.
+    def context_vector_(self, h_t, out, WyY, context_vector, mask, batch_size, max_seq_len):
+        WhH = t.matmul(h_t, self.Wh)
+        WrC = t.matmul(context_vector, self.Wr)
+        WhH = WhH + WrC
+        # Use mask to ignore the outputs of the padding part in premise
+        shape = WhH.size()
+        WhH = WhH.view(shape[0], 1, shape[1])
+        WhH = WhH.expand(shape[0], max_seq_len, shape[1])
 
-            M1 = mask1.float()
-            shape = M1.size()
-            M = M1.view(shape[0], shape[1], 1).float()
-            M = M.expand(shape[0], shape[1], self.lstm_size)
+        M1 = mask.float()
+        shape = M1.size()
+        M = M1.view(shape[0], shape[1], 1).float()
+        M = M.expand(shape[0], shape[1], self.lstm_size)
 
-            WhH = WhH * M
-            M = t.tanh(WyY + WhH)
-            aW = self.aW.view(1, 1, -1)
-            aW = aW.expand(batch_size, max_seq_len, aW.size()[2])
+        WhH = WhH * M
+        M = t.tanh(WyY + WhH)
+        aW = self.aW.view(1, 1, -1)
+        aW = aW.expand(batch_size, max_seq_len, aW.size()[2])
 
-            # Compute batch dot: the first step of a softmax
-            batch_dot = M * aW
-            batch_dot = t.sum(batch_dot, 2)
+        # Compute batch dot: the first step of a softmax
+        batch_dot = M * aW
+        batch_dot = t.sum(batch_dot, 2)
 
-            # Avoid overflow
-            max_by_column, _ = t.max(batch_dot, 1)
-            max_by_column = max_by_column.view(-1, 1)
-            max_by_column = max_by_column.expand(max_by_column.size()[0], max_seq_len)
+        # Avoid overflow
+        max_by_column, _ = t.max(batch_dot, 1)
+        max_by_column = max_by_column.view(-1, 1)
+        max_by_column = max_by_column.expand(max_by_column.size()[0], max_seq_len)
 
-            batch_dot = t.exp(batch_dot - max_by_column) * M1
+        batch_dot = t.exp(batch_dot - max_by_column) * M1
 
-            # Partition function and attention:
-            # the second step of a softmax, use mask to ignore the padding
-            partition = t.sum(batch_dot, 1)
-            partition = partition.view(-1, 1)
-            partition = partition.expand(partition.size()[0], max_seq_len)
-            attention = batch_dot / partition
+        # Partition function and attention:
+        # the second step of a softmax, use mask to ignore the padding
+        partition = t.sum(batch_dot, 1)
+        partition = partition.view(-1, 1)
+        partition = partition.expand(partition.size()[0], max_seq_len)
+        attention = batch_dot / partition
 
-            # compute context vector
-            shape = attention.size()
-            attention = attention.view(shape[0], shape[1], 1)
-            attention = attention.expand(shape[0], shape[1], self.lstm_size)
+        # compute context vector
+        shape = attention.size()
+        attention = attention.view(shape[0], shape[1], 1)
+        attention = attention.expand(shape[0], shape[1], self.lstm_size)
 
-            cv_t = out * attention
-            cv_t = t.sum(cv_t, 1)
+        cv_t = out * attention
+        cv_t = t.sum(cv_t, 1)
 
-            return cv_t
+        return cv_t
 
-        batch_size = rep1.size()[0]
-        max_seq_len = rep1.size()[1]
-        sents_premise = self.embeddings(rep1).transpose(1, 0)  # (sequence_length, batch_size, feature_size)
-        sents_hypothesis = self.embeddings(rep2).transpose(1, 0)
-
+    def get_representation(self, sen_1, sen_2, len_1, mask_1, len_2, batch_size, max_seq_len):
         (hx, cx) = self.init_hidden(batch_size)
-        hx = hx.view(batch_size, -1)
-        cx = cx.view(batch_size, -1)
+        hx = hx.view(batch_size, -1).cuda()
+        cx = cx.view(batch_size, -1).cuda()
         hidden = (hx, cx)
-
-        # Ouput of LSTM: sequence (seq_length, mini batch x lstm size)
         outp = []
         hidden_states = []
-        for inp in range(sents_premise.size(0)):
-            hidden = self.lstm1(sents_premise[inp], hidden)
+        for inp in range(sen_1.size(0)):
+            hidden = self.lstm1(sen_1[inp], hidden)
             outp += [hidden[0]]
             hidden_states += [hidden[1]]
 
+        # ht
         outp = t.stack(outp).transpose(0, 1)  # (batch_size, seq_len, lstm_size)
-        len1 = (len1 - 1).view(-1, 1, 1).expand(outp.size(0), 1, outp.size(2))  # (batch_size, 1, lstm_size)
+        len1 = (len_1 - 1).view(-1, 1, 1).expand(outp.size(0), 1, outp.size(2))  # (batch_size, 1, lstm_size)
         out = t.gather(outp, 1, len1).transpose(1, 0)
-
+        # ct
         hidden_states = t.stack(hidden_states).transpose(0, 1)
-        # len1 = (len1-1).view(-1, 1, 1).expand(hidden_states.size(0), 1, hidden_states.size(2))
         hidden_state = t.gather(hidden_states, 1, len1).transpose(1, 0)
 
-        lstm_outs, _ = self.lstm2(sents_hypothesis, (out, hidden_state))
+        lstm_outs, _ = self.lstm2(sen_2, (out, hidden_state))
         lstm_outs = lstm_outs.transpose(0, 1)  # (batch_size, seq_len, lstm_size)
 
-        # One-Way Attention
+        # Attention
         # len2 = (len2 - 1).view(-1, 1, 1).expand(lstm_outs.size(0), 1, lstm_outs.size(2))
         # lstm_out = t.gather(lstm_outs, 1, len2)
         # lstm_out = lstm_out.view(lstm_out.size(0), -1)
@@ -424,19 +409,33 @@ class TwoWayWordByWordAttentionLSTM(nn.Module):
 
         WyY = t.matmul(outp, self.Wy)
         # How to Init contextvec ?
-        context_vec = t.zeros(lstm_outs.size(0), lstm_outs.size(1) + 1, lstm_outs.size(2))
+        context_vec_pre = t.zeros(lstm_outs.size(0),lstm_outs.size(2)).cuda()
+        context_vec = []
         for i in range(lstm_outs.size(1)):
-            context_vec[:, i + 1, :] = context_vector_(lstm_outs[:, i, :], outp, WyY, context_vec[:, i, :])
+            context_vec_pre = self.context_vector_(lstm_outs[:, i, :], outp, WyY, context_vec_pre, mask_1, batch_size, max_seq_len)
+            context_vec.append(context_vec_pre)
 
-        len2 = (len2 - 1).view(-1, 1, 1).expand(lstm_outs.size(0), 1, lstm_outs.size(2))
-        context_vec = t.gather(context_vec, 1, len2 + 1)
+        context_vec = t.stack(context_vec).transpose(0, 1)
+        len2 = (len_2 - 1).view(-1, 1, 1).expand(lstm_outs.size(0), 1, lstm_outs.size(2))
+        context_vec = t.gather(context_vec, 1, len2)
         context_vec = context_vec.view(context_vec.size(0), -1)
         lstm_out = t.gather(lstm_outs, 1, len2)
         lstm_out = lstm_out.view(lstm_out.size(0), -1)
-        final = t.tanh(t.matmul(context_vec, self.Wp) + t.matmul(lstm_out, self.Wh))
+        return t.tanh(t.matmul(context_vec, self.Wp) + t.matmul(lstm_out, self.Wh))
+
+    # Forward propagation
+    def forward(self, rep1, len1, mask1, rep2, len2, mask2):
+        batch_size = rep1.size()[0]
+        max_seq_len = rep1.size()[1]
+        sents_premise = self.embeddings(rep1).transpose(1, 0)  # (sequence_length, batch_size, feature_size)
+        sents_hypothesis = self.embeddings(rep2).transpose(1, 0)
+        final_1 = self.get_representation(sents_premise, sents_hypothesis, len1, mask1, len2, batch_size, max_seq_len)
+        final_2 = self.get_representation(sents_hypothesis, sents_premise, len2, mask2, len1, batch_size, max_seq_len)
+        final = t.cat((final_1, final_2), dim=1)
         fc_out = F.dropout(t.tanh(self.linear1(final)), p=self.dropout_rate)
         fc_out = self.linear2(fc_out)
-        return F.log_softmax(fc_out, dim=1)
+        out = F.log_softmax(fc_out, dim=1)
+        return out
 
     def load(self, path):
         self.load_state_dict(t.load(path))
@@ -458,8 +457,8 @@ class ModelRun(object):
         return data_set[0][s:e], data_set[1][s:e], data_set[2][s:e], data_set[3][s:e], data_set[4][s:e]
 
     # Create mask for premise sentences.
-    def create_mask(self, data_set, max_length):
-        length = data_set[1]
+    def create_mask(self, data_set, max_length, index):
+        length = data_set[index]
         masks = []
         for one in length:
             mask = list(np.ones(one))
@@ -488,8 +487,10 @@ class ModelRun(object):
         max_seq_len = train_set[0].shape[1]
 
         # Create mask for first sentence
-        train_mask = self.create_mask(train_set, max_seq_len)
-        dev_mask = self.create_mask(dev_set, max_seq_len)
+        train_mask_1 = self.create_mask(train_set, max_seq_len, 1)
+        train_mask_2 = self.create_mask(train_set, max_seq_len, 3)
+        dev_mask_1 = self.create_mask(dev_set, max_seq_len, 1)
+        dev_mask_2 = self.create_mask(dev_set, max_seq_len, 3)
 
         # Train, validate and test set size
         train_size = train_set[0].shape[0]
@@ -508,7 +509,7 @@ class ModelRun(object):
         if load_model_path is not None:
             self.model.load(load_model_path)
         if use_gpu:
-            self.model.cuda()
+            self.model = self.model.cuda()
 
         optimizer = t.optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()),
                                  lr=learning_rate, weight_decay=beta)
@@ -524,26 +525,31 @@ class ModelRun(object):
             s = 0
             loss_train = 0
             times = 0
-            while s < train_size:
+            index = math.ceil(train_size / batch_size)
+            # while s < train_size:
+            for i in tqdm(range(index)):
                 e = min(s + batch_size, train_size)
                 batch_1v, batch_1l, batch_2v, batch_2l, batch_label = self.get_batch(train_set, s, e)
-                batch_mask = train_mask[s:e]
-                rep1 = t.from_numpy(batch_1v).requires_grad_(mode=False).long()
-                len1 = t.from_numpy(batch_1l).requires_grad_(mode=False).long()
-                rep2 = t.from_numpy(batch_2v).requires_grad_(mode=False).long()
-                len2 = t.from_numpy(batch_1l).requires_grad_(mode=False).long()
-                mask = t.from_numpy(batch_mask).requires_grad_(mode=False).long()
-                label = t.from_numpy(batch_label).requires_grad_(mode=False).long()
+                batch_mask_1 = train_mask_1[s:e]
+                batch_mask_2 = train_mask_2[s:e]
+                rep1 = t.from_numpy(batch_1v).requires_grad_(False).long()
+                len1 = t.from_numpy(batch_1l).requires_grad_(False).long()
+                rep2 = t.from_numpy(batch_2v).requires_grad_(False).long()
+                len2 = t.from_numpy(batch_1l).requires_grad_(False).long()
+                mask_1 = t.from_numpy(batch_mask_1).requires_grad_(False).long()
+                mask_2 = t.from_numpy(batch_mask_2).requires_grad_(False).long()
+                label = t.from_numpy(batch_label).requires_grad_(False).long()
                 if use_gpu:
-                    rep1.cuda()
-                    len1.cuda()
-                    rep2.cuda()
-                    len2.cuda()
-                    mask.cuda()
-                    label.cuda()
+                    rep1 = rep1.cuda()
+                    len1 = len1.cuda()
+                    rep2 = rep2.cuda()
+                    len2 = len2.cuda()
+                    mask_1 = mask_1.cuda()
+                    mask_2 = mask_2.cuda()
+                    label = label.cuda()
                 optimizer.zero_grad()
-
-                predict_label = self.model(rep1, len1, mask, rep2, len2)
+                t.autograd.set_detect_anomaly(True)
+                predict_label = self.model(rep1, len1, mask_1, rep2, len2, mask_2)
                 loss = criterion(predict_label, label)
                 loss_train += loss.item()
                 times += 1
@@ -562,22 +568,25 @@ class ModelRun(object):
                 e = min(s + batch_size, dev_size)
                 batch_1v, batch_1l, batch_2v, batch_2l, batch_label = \
                     self.get_batch(dev_set, s, e)
-                mask = dev_mask[s:e]
-                rep1 = t.from_numpy(batch_1v).requires_grad_(mode=False).long()
-                len1 = t.from_numpy(batch_1l).requires_grad_(mode=False).long()
-                rep2 = t.from_numpy(batch_2v).requires_grad_(mode=False).long()
-                len2 = t.from_numpy(batch_1l).requires_grad_(mode=False).long()
-                mask = t.from_numpy(mask).requires_grad_(mode=False).long()
-                label = t.from_numpy(batch_label).requires_grad_(mode=False).long()
+                batch_mask_1 = dev_mask_1[s:e]
+                batch_mask_2 = dev_mask_2[s:e]
+                rep1 = t.from_numpy(batch_1v).requires_grad_(False).long()
+                len1 = t.from_numpy(batch_1l).requires_grad_(False).long()
+                rep2 = t.from_numpy(batch_2v).requires_grad_(False).long()
+                len2 = t.from_numpy(batch_1l).requires_grad_(False).long()
+                mask_1 = t.from_numpy(batch_mask_1).requires_grad_(False).long()
+                mask_2 = t.from_numpy(batch_mask_2).requires_grad_(False).long()
+                label = t.from_numpy(batch_label).requires_grad_(False).long()
                 if use_gpu:
-                    rep1.cuda()
-                    len1.cuda()
-                    rep2.cuda()
-                    len2.cuda()
-                    mask.cuda()
-                    label.cuda()
+                    rep1 = rep1.cuda()
+                    len1 = len1.cuda()
+                    rep2 = rep2.cuda()
+                    len2 = len2.cuda()
+                    mask_1 = mask_1.cuda()
+                    mask_2 = mask_2.cuda()
+                    label = label.cuda()
 
-                predict_label = self.model(rep1, len1, mask, rep2, len2)
+                predict_label = self.model(rep1, len1, mask_1, rep2, len2, mask_2)
                 total_correct += self.evaluate_model(predict_label, label)
                 s = e
             print("Epoch {}\tLoss {}\tAccuracy_Val {}\tTime {}".format(i + 1, loss_train, (total_correct / dev_size),
@@ -586,7 +595,8 @@ class ModelRun(object):
 
     def test(self, test_set):
         max_seq_len = test_set[0].shape[1]
-        test_mask = self.create_mask(test_set, max_seq_len)
+        test_mask_1 = self.create_mask(test_set, max_seq_len, 1)
+        test_mask_2 = self.create_mask(test_set, max_seq_len, 3)
         test_size = test_set[0].shape[0]
         # Evaluate the trained model on testset
         s = 0
@@ -595,40 +605,45 @@ class ModelRun(object):
             e = min(s + batch_size, test_size)
             batch_1v, batch_1l, batch_2v, batch_2l, batch_label = \
                 self.get_batch(test_set, s, e)
-            mask = test_mask[s:e]
-            rep1 = t.from_numpy(batch_1v).requires_grad_(mode=False).long()
-            len1 = t.from_numpy(batch_1l).requires_grad_(mode=False).long()
-            rep2 = t.from_numpy(batch_2v).requires_grad_(mode=False).long()
-            len2 = t.from_numpy(batch_1l).requires_grad_(mode=False).long()
-            mask = t.from_numpy(mask).requires_grad_(mode=False).long()
-            label = t.from_numpy(batch_label).requires_grad_(mode=False).long()
+            batch_mask_1 = test_mask_1[s:e]
+            batch_mask_2 = test_mask_2[s:e]
+            rep1 = t.from_numpy(batch_1v).requires_grad_(False).long()
+            len1 = t.from_numpy(batch_1l).requires_grad_(False).long()
+            rep2 = t.from_numpy(batch_2v).requires_grad_(False).long()
+            len2 = t.from_numpy(batch_1l).requires_grad_(False).long()
+            mask_1 = t.from_numpy(batch_mask_1).requires_grad_(False).long()
+            mask_2 = t.from_numpy(batch_mask_2).requires_grad_(False).long()
+            label = t.from_numpy(batch_label).requires_grad_(False).long()
             if use_gpu:
-                rep1.cuda()
-                len1.cuda()
-                rep2.cuda()
-                len2.cuda()
-                mask.cuda()
-                label.cuda()
+                rep1 = rep1.cuda()
+                len1 = len1.cuda()
+                rep2 = rep2.cuda()
+                len2 = len2.cuda()
+                mask_1 = mask_1.cuda()
+                mask_2 = mask_2.cuda()
+                label = label.cuda()
 
-            predict_label = self.model(rep1, len1, mask, rep2, len2)
+            predict_label = self.model(rep1, len1, mask_1, rep2, len2, mask_2)
             total_correct += self.evaluate_model(predict_label, label)
             s = e
         print('Accuracy %f' % (total_correct / test_size))
 
 
 def main():
-    # Preprocess
-    # collect vocabulary of SNLI set
-    snli = SNLI(None, data_source_path)
-    # read word embedding
-    embedding = WordEmbedding(embedding_source_path, snli.vocab)
-    pickle.dump(embedding, open(embedding_path, 'wb'))
-    # create SNLI dataset
-    snli = SNLI(embedding, data_path)
-    train_set, dev_set, test_set = snli.create_padding_set()
-    pickle.dump([train_set, dev_set, test_set], open(data_path, 'wb'))
-
-    #  Load pre-trained word embeddings and the SNLI dataset
+    ## Preprocess
+    ## collect vocabulary of SNLI set
+    # snli = SNLI(None, data_source_path)
+    # print('init vocab finish')
+    # # read word embedding
+    # embedding = WordEmbedding(embedding_source_path, snli.vocab)
+    # pickle.dump(embedding, open(embedding_path, 'wb'))
+    # print('init embedding finish')
+    # # create SNLI dataset
+    # snli = SNLI(embedding, data_source_path)
+    # train_set, dev_set, test_set = snli.create_padding_set()
+    # pickle.dump([train_set, dev_set, test_set], open(data_path, 'wb'))
+    # print('init dataset finish')
+    # Load pre-trained word embeddings and the SNLI dataset
     embedding = pickle.load(open(embedding_path, 'rb'))
     dataset = pickle.load(open(data_path, 'rb'))
     train_set = dataset[0]
@@ -654,14 +669,16 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    model = TwoWayWordByWordAttentionLSTM(lstm_size, hidden_size, 0.5, None, 3, beta)
-    rep1 = t.zeros([32, 50]).long()
-    len1 = (t.ones(32) * 50).long()
-    len1[0] = 30
-    rep2 = t.zeros([32, 30]).long()
-    len2 = (t.ones(32) * 30).long()
-    len2[0] = 25
-    mask1 = t.ones_like(rep1)
-    mask1[0, 30:] = 0
-    out = model(rep1, len1, mask1, rep2, len2)
+    main()
+    # model = TwoWayWordByWordAttentionLSTM(lstm_size, hidden_size, 0.5, None, 3, beta)
+    # rep1 = t.zeros([32, 50]).long()
+    # len1 = (t.ones(32) * 50).long()
+    # len1[0] = 30
+    # rep2 = t.zeros([32, 30]).long()
+    # len2 = (t.ones(32) * 30).long()
+    # len2[0] = 25
+    # mask1 = t.ones_like(rep1)
+    # mask1[0, 30:] = 0
+    # mask2 = t.ones_like(rep2)
+    # mask2[0, 25:] = 0
+    # out = model(rep1, len1, mask1, rep2, len2, mask2)

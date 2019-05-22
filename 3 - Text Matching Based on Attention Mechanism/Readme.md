@@ -1,6 +1,6 @@
 # Text Matching Based on Attention Mechanism
 
-Based on [Pytorch](https://github.com/pytorch/pytorch) and [TorchText](https://github.com/pytorch/text)
+Based on [Pytorch](https://github.com/pytorch/pytorch)
 - [Dataset](https://nlp.stanford.edu/projects/snli/) `SNLI` 
   
     > The `SNLI `corpus (version 1.0) is a collection of 570k human-written English sentence pairs manually labeled for balanced classification with the labels entailment, contradiction, and neutral, supporting the task of natural language inference (NLI), also known as recognizing textual entailment (RTE). We aim for it to serve both as a benchmark for evaluating representational systems for text, especially including those induced by representation learning methods, as well as a resource for developing NLP models of any kind.
@@ -17,11 +17,20 @@ Based on [Pytorch](https://github.com/pytorch/pytorch) and [TorchText](https://g
         hypothesis).
 -   这个任务很重要，因为许多自然语言处理问题，如信息提取、关系提取、文本摘要或机器翻译，都依赖于它，并且可以从更精确的RTE系统中获益
 
+## Knowledge
+
+-   Attention Mechanism
+    -   [Here](<https://looperxx.github.io/My_wiki/Attention/>) is my note for Attention Mechanism.
+-   `Token2Token Attention`
+    -   思想仍然是传统的source与target之间的attention
+    -   创新之处在于attention计算的层次更加深入
+        -   本任务原来的Attention是通过两个LSTM最终计算出的$h_N$计算出Attention权重
+        -   为了使Attention的层次从sequence深入至token，本文在第二个LSTM端，对每一$h_t$都计算此刻的权重并计算出此刻的 $r_t$ (计算中引入了$r_{t-1}$)，不再是借助整个sequence的最终特征计算权重，而是针对每一token都计算出$r_t$并将最终的$r_N$与$h_N$融合
+
 ## Paper
 
 - [Reasoning about Entailment with Neural Attention](https://arxiv.org/abs/1509.06664)  
-
-    - 摘要: 自动识别自然语言句子对之间的隐含关系，一直是利用人工工程特征的分类器的优势。直到最近，端到端可微神经结构还没有达到最先进的性能。在本文中，我们提出了一个神经模型，使用长短时记忆单元读取两个句子从而确定蕴含关系。我们通过一个逐字的神经注意机制来扩展这个模型，该机制鼓励对的单词对和短语对进行推理。此外，我们对该模型产生的注意权重进行了定性分析，证明了这种推理能力。在一个大数据集上，该模型比之前的最佳神经模型和具有工程特征的分类器有很大的优势。它是第一个通用的端到端可微系统，实现了对文本数据集的最先进的准确性。
+- 摘要: 自动识别自然语言句子对之间的隐含关系，一直是利用人工工程特征的分类器的优势。直到最近，端到端可微神经结构还没有达到最先进的性能。在本文中，我们提出了一个神经模型，使用长短时记忆单元读取两个句子从而确定蕴含关系。我们通过一个逐字的神经注意机制来扩展这个模型，该机制鼓励对的单词对和短语对进行推理。此外，我们对该模型产生的注意权重进行了定性分析，证明了这种推理能力。在一个大数据集上，该模型比之前的最佳神经模型和具有工程特征的分类器有很大的优势。它是第一个通用的端到端可微系统，实现了对文本数据集的最先进的准确性。
 - 介绍
   
     -   RTE的端到端
@@ -33,7 +42,7 @@ Based on [Pytorch](https://github.com/pytorch/pytorch) and [TorchText](https://g
                       -   我们为RTE提供了一个详细的神经注意定性分析。
     
 - 模型
-    
+  
     -   与学习句子表示不同的是，我们感兴趣的是神经模型，它能读懂两个句子来确定句子之间的关联，从而推断出成对的单词和短语之间的关联。
     
         -   模型架构图![1558254842349](imgs/1558254842349.png)
@@ -68,12 +77,10 @@ Based on [Pytorch](https://github.com/pytorch/pytorch) and [TorchText](https://g
                 - Two-way Attention: 将前提与假设对调 生成的两个表示concatenate后分类
     
 - [Enhanced LSTM for Natural Language Inference](https://arxiv.org/abs/1609.06038v3)
-- 摘要: 与之前使用非常复杂的网络体系结构的顶级模型不同，我们首先证明了基于链LSTMs的顺序推理模型的精心设计可以优于所有之前的模型。在此基础上，我们进一步表明，通过在局部推理建模和推理组合中显式地考虑递归体系结构，我们实现了额外的改进。特别是，合并语法解析信息有助于获得最佳结果—即使添加到已经非常强大的模型中，它也会进一步提高性能。
+    - 摘要: 与之前使用非常复杂的网络体系结构的顶级模型不同，我们首先证明了基于链LSTMs的顺序推理模型的精心设计可以优于所有之前的模型。在此基础上，我们进一步表明，通过在局部推理建模和推理组合中显式地考虑递归体系结构，我们实现了额外的改进。特别是，合并语法解析信息有助于获得最佳结果—即使添加到已经非常强大的模型中，它也会进一步提高性能。
 
 ## Reference
 
-- https://blog.csdn.net/xiayto/article/details/81247461
-
-## Others
-
--   every model has `.ipynb` and `.py ` because `.py` is better for debug and `.ipynb` has better interactions
+- [深度文本匹配发展总结](https://blog.csdn.net/xiayto/article/details/81247461)
+- [Ohio University Homework](https://github.com/qfettes/ReasoningAboutEntailmentWithNeuralAttention)
+- [entailment-neural-attention-lstm-tf](<https://github.com/borelien/entailment-neural-attention-lstm-tf/blob/master/python/network.py>)
