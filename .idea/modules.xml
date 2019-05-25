@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/../CharRNN/.idea/CharRNN.iml" filepath="$PROJECT_DIR$/../CharRNN/.idea/CharRNN.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/NLPTry.iml" filepath="$PROJECT_DIR$/.idea/NLPTry.iml" />
       <module fileurl="file://$PROJECT_DIR$/../VolleyBall/.idea/VolleyBall.iml" filepath="$PROJECT_DIR$/../VolleyBall/.idea/VolleyBall.iml" />
     </modules>
