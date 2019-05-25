@@ -58,6 +58,8 @@ $$
 
 #### CRF和LSTM在序列标注上的优劣
 
+![TIM截图20190525084430](imgs/TIM截图20190525084430.png)
+
 　　**LSTM：**像RNN、LSTM、BILSTM这些模型，它们在序列建模上很强大，它们能够capture长远的上下文信息，此外还具备神经网络拟合非线性的能力，这些都是crf无法超越的地方，对于t时刻来说，输出层yt受到隐层ht（包含上下文信息）和输入层xt（当前的输入）的影响，但是yt和其他时刻的yt‘是相互独立的，感觉像是一种point wise，对当前t时刻来说，我们希望找到一个概率最大的yt，但其他时刻的yt’ 对当前yt没有影响，**如果yt之间存在较强的依赖关系的话**（例如，形容词后面一般接名词，存在一定的约束），LSTM无法对这些约束进行建模，LSTM模型的性能将受到限制。
 
 　　**CRF：**它不像LSTM等模型，能够考虑长远的上下文信息，**它更多考虑的是整个句子的局部特征的线性加权组合（通过特征模版去扫描整个句子）**。关键的一点是，CRF的模型为p(y | x, w)，注意这里y和x都是序列，它有点像list wise，优化的是一个序列y = (y1, y2, …, yn)，而不是某个时刻的yt，即找到一个概率最高的序列y = (y1, y2, …, yn)使得p(y1, y2, …, yn| x, w)最高，它计算的是一种联合概率，优化的是整个序列（最终目标），而不是将每个时刻的最优拼接起来，在这一点上CRF要优于LSTM。
@@ -68,62 +70,9 @@ $$
 
 　　**CNN＋BILSTM＋CRF：**这是目前学术界比较流行的做法，BILSTM＋CRF是为了结合以上两个模型的优点，CNN主要是处理英文的情况，英文单词是由更细粒度的字母组成，这些字母潜藏着一些特征（例如：前缀后缀特征），通过CNN的卷积操作提取这些特征，在中文中可能并不适用（中文单字无法分解，除非是基于分词后），这里简单举一个例子，例如词性标注场景，单词football与basketball被标为名词的概率较高， 这里后缀ball就是类似这种特征。
 
-![TIM截图20190525084430](imgs/TIM截图20190525084430.png)
-
-#### Details
-
-##### linear-chain CRF
-
--   softmax makes local choices. In other words, even if we capture some information from the context thanks to the bi-LSTM, the tagging decision is **still local.** We don’t make use of the neighboring tagging decisions. Given a sequence of words $w_1,…,w_m$, a sequence of score vectors $s_1,…,s_m$ and a sequence of tags $y_1,…,y_m$, a linear-chain CRF defines a global score $C \in \mathbb{R}$ such that
-
-$$
-\begin{align*}
-C(y_1, \ldots, y_m) &= b[y_1] &+ \sum_{t=1}^{m} s_t [y_t] &+ \sum_{t=1}^{m-1} T[y_{t}, y_{t+1}] &+ e[y_m]\\
-                    &= \text{begin} &+ \text{scores} &+ \text{transitions} &+ \text{end}
-\end{align*} 
-$$
-
--   where $T$ is a transition matrix in $R^{9×9}$ and $e,b \in R^9$ are vectors of scores that capture the cost of beginning or ending with a given tag. The use of the matrix $T$ captures linear (one step) dependencies between tagging decisions.
-
--   The motivation behind CRFs was to generate **sentence level** likelihoods for optimal tags. What that means is for each word we estimate maximum likelihood and then we use the `Viterbi `algorithm to decode the tag sequence optimally.
-
--   Softmax doesn't value any dependencies, this is a problem since NER the context heavily influences the tag that is assigned. This is solved by applying CRF as it takes into account the full sequence to assign the tag.
-
-##### Evaluation schemes
-
-Forward pass and `Viterbi `algorithm
-
--   Recall that the CRF computes a conditional probability. Let $y$ be a tag sequence and $x$ an input sequence of words. Then we compute
-
-$$
-P(y|x) = \frac{\exp{(\text{Score}(x, y)})}{\sum_{y'} \exp{(\text{Score}(x, y')})}
-$$
-
--   Where the score is determined by defining some log potentials $\log \psi_i(x,y)$ such that
-
-$$
-\text{Score}(x,y) = \sum_i \log \psi_i(x,y)
-$$
-
--   In our model, we define two kinds of potentials: emission and transition. The emission potential for the word at index $i$ comes from the hidden state of the Bi-LSTM at timestep $i$. The transition scores are stored in a $|T|x|T|$ matrix $P$, where $T$ is the tag set. In my implementation, $P_{j,k}$ is the score of transitioning to tag $j$ from tag $k$. So:
-
-$$\text{Score}(x,y) = \sum_i \log \psi_\text{EMIT}(y_i \rightarrow x_i) + \log \psi_\text{TRANS}(y_{i-1} \rightarrow y_i)$$
-$$= \sum_i (h_i[y_i] + \textbf{P}_{y_i, y_{i-1}})$$
-
-######  `Viterbi ` algorithm
-
-`Viterbi decode` is basically applying dynamic programming to choosing our tag sequence. Let’s suppose that we have the solution $\tilde{s}_{t+1} (y^{t+1})$ for time steps $t + 1, ...., m$ for sequences that start with $y^{t+1}$ for each of the possible $y^{t+1}$. Then the solution $\tilde{s}_t(y_t)$ for time steps $t, ..., m$ that starts with $y_t$ verifies 
-$$
-\begin{align*}
-\tilde{s}_t(y_t) &= \operatorname{argmax}_{y_t, \ldots, y_m} C(y_t, \ldots, y_m)\\
-            &= \operatorname{argmax}_{y_{t+1}} s_t [y_t] + T[y_{t}, y_{t+1}] + \tilde{s}_{t+1}(y^{t+1})
-\end{align*}
-$$
-Then, we can easily define the probability of a given sequence of tags as
-
-$$ \mathbb{P}(y_1, \ldots, y_m) = \frac{e^{C(y_1, \ldots, y_m)}}{Z} $$
-
 ## Paper
+
+>   第一篇论文中，作者并未详细介绍CRF在模型中的计算流程，其在github上发布的repo中做出来详细介绍
 
 ### [End-to-end Sequence Labeling via Bi-directional LSTM-CNNs-CRF](https://arxiv.org/abs/1603.01354)  
 
@@ -219,6 +168,57 @@ Bias 初始化为0，但LSTM中的遗忘门的$b_f$ 初始化为1
 
 未来的工作有几个潜在的方向。首先，我们的模型可以进一步改进，探索多任务学习方法，结合更多有用和相关的信息。例如，我们可以用POS和NER标签共同训练一个神经网络模型来改进我们在网络中学习到的中间表示。另一个有趣的方向是将我们的模型应用于其他领域的数据，如社交媒体(Twitter和微博)。由于我们的模型不需要任何特定于领域或任务的知识，所以可能很容易将它应用到这些领域
 
+#### Details
+
+##### linear-chain CRF
+
+-   softmax makes local choices. In other words, even if we capture some information from the context thanks to the bi-LSTM, the tagging decision is **still local.** We don’t make use of the neighboring tagging decisions. Given a sequence of words $w_1,…,w_m$, a sequence of score vectors $s_1,…,s_m$ and a sequence of tags $y_1,…,y_m$, a linear-chain CRF defines a global score $C \in \mathbb{R}$ such that
+
+$$
+\begin{align*}
+C(y_1, \ldots, y_m) &= b[y_1] &+ \sum_{t=1}^{m} s_t [y_t] &+ \sum_{t=1}^{m-1} T[y_{t}, y_{t+1}] &+ e[y_m]\\
+                    &= \text{begin} &+ \text{scores} &+ \text{transitions} &+ \text{end}
+\end{align*} 
+$$
+
+-   where $T$ is a transition matrix in $R^{9×9}$ and $e,b \in R^9$ are vectors of scores that capture the cost of beginning or ending with a given tag. The use of the matrix $T$ captures linear (one step) dependencies between tagging decisions.
+-   The motivation behind CRFs was to generate **sentence level** likelihoods for optimal tags. What that means is for each word we estimate maximum likelihood and then we use the `Viterbi `algorithm to decode the tag sequence optimally.
+-   Softmax doesn't value any dependencies, this is a problem since NER the context heavily influences the tag that is assigned. This is solved by applying CRF as it takes into account the full sequence to assign the tag.
+
+##### Evaluation schemes
+
+Forward pass and `Viterbi `algorithm
+
+-   Recall that the CRF computes a conditional probability. Let $y$ be a tag sequence and $x$ an input sequence of words. Then we compute
+
+$$
+P(y|x) = \frac{\exp{(\text{Score}(x, y)})}{\sum_{y'} \exp{(\text{Score}(x, y')})}
+$$
+
+-   Where the score is determined by defining some log potentials $\log \psi_i(x,y)$ such that
+
+$$
+\text{Score}(x,y) = \sum_i \log \psi_i(x,y)
+$$
+
+-   In our model, we define two kinds of potentials: emission and transition. The emission potential for the word at index $i$ comes from the hidden state of the Bi-LSTM at timestep $i$. The transition scores are stored in a $|T|x|T|$ matrix $P$, where $T$ is the tag set. In my implementation, $P_{j,k}$ is the score of transitioning to tag $j$ from tag $k$. So:
+
+$$\text{Score}(x,y) = \sum_i \log \psi_\text{EMIT}(y_i \rightarrow x_i) + \log \psi_\text{TRANS}(y_{i-1} \rightarrow y_i)$$
+$$= \sum_i (h_i[y_i] + \textbf{P}_{y_i, y_{i-1}})$$
+
+###### `Viterbi ` algorithm
+
+`Viterbi decode` is basically applying dynamic programming to choosing our tag sequence. Let’s suppose that we have the solution $\tilde{s}_{t+1} (y^{t+1})$ for time steps $t + 1, ...., m$ for sequences that start with $y^{t+1}$ for each of the possible $y^{t+1}$. Then the solution $\tilde{s}_t(y_t)$ for time steps $t, ..., m$ that starts with $y_t$ verifies 
+$$
+\begin{align*}
+\tilde{s}_t(y_t) &= \operatorname{argmax}_{y_t, \ldots, y_m} C(y_t, \ldots, y_m)\\
+            &= \operatorname{argmax}_{y_{t+1}} s_t [y_t] + T[y_{t}, y_{t+1}] + \tilde{s}_{t+1}(y^{t+1})
+\end{align*}
+$$
+Then, we can easily define the probability of a given sequence of tags as
+
+$$ \mathbb{P}(y_1, \ldots, y_m) = \frac{e^{C(y_1, \ldots, y_m)}}{Z} $$
+
 ### [Neural Architectures for Named Entity Recognition](https://arxiv.org/abs/1603.01360)
 
 ## Reference
@@ -226,8 +226,9 @@ Bias 初始化为0，但LSTM中的遗忘门的$b_f$ 初始化为1
 - [Implementation of BiLSTM-CNNs-CRF](<https://github.com/jayavardhanr/End-to-end-Sequence-Labeling-via-Bi-directional-LSTM-CNNs-CRF-Tutorial>)
 - [ADVANCED: MAKING DYNAMIC DECISIONS AND THE BI-LSTM CRF](<https://pytorch.org/tutorials/beginner/nlp/advanced_tutorial.html#sphx-glr-beginner-nlp-advanced-tutorial-py>)
 - [CRFS](<http://www.cs.columbia.edu/~mcollins/crf.pdf>)
+- [Viterbi-Algorithm（维特比）算法](<https://blog.csdn.net/meiqi0538/article/details/80960128>)
 - [论文笔记：[ACL2016]End-to-end Sequence Labeling via Bi-directional LSTM-CNNs-CRF](<https://blog.csdn.net/youngdreamnju/article/details/54346658>)
 - [通俗理解BiLSTM-CRF命名实体识别模型中的CRF层](https://www.cnblogs.com/createMoMo/p/7529885.html)
 - [命名实体识别CoNLL2003](https://yuanxiaosc.github.io/2018/12/26/%E5%91%BD%E5%90%8D%E5%AE%9E%E4%BD%93%E8%AF%86%E5%88%ABCoNLL2003/)
 - [自然语言处理之序列标注问题](https://www.cnblogs.com/jiangxinyang/p/9368482.html)
-
+- [HMM学习最佳范例全文PDF文档及相关文章索引](http://www.52nlp.cn/hmm学习最佳范例全文pdf文档及相关文章索引)

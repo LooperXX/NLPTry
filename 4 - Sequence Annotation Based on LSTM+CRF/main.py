@@ -480,6 +480,7 @@ class BiLSTM_CRF(nn.Module):
 
             # The ith entry of next_tag_var is the value for the
             # edge (i -> next_tag) before we do log-sum-exp
+            # 返回每一行中的最大值从tag i 转换到 next_tag的最大可能性
             max_tag_var, _ = torch.max(tag_var, dim=1)
 
             # The forward variable for this tag is log-sum-exp of all the
@@ -512,10 +513,10 @@ class BiLSTM_CRF(nn.Module):
             forward_var = forward_var.cuda()
         for feat in feats:
             next_tag_var = forward_var.view(1, -1).expand(self.tagset_size, self.tagset_size) + self.transitions
-            _, bptrs_t = torch.max(next_tag_var, dim=1)
+            _, bptrs_t = torch.max(next_tag_var, dim=1) # 保存的是每个状态最可能变成的下一状态
             bptrs_t = bptrs_t.squeeze().data.cpu().numpy()  # holds the backpointers for this step
             next_tag_var = next_tag_var.data.cpu().numpy()
-            viterbivars_t = next_tag_var[range(len(bptrs_t)), bptrs_t]  # holds the viterbi variables for this step
+            viterbivars_t = next_tag_var[range(len(bptrs_t)), bptrs_t]  # holds the viterbi variables for this step 保存的是每个状态最可能变成的下一状态的可能性
             viterbivars_t = torch.FloatTensor(viterbivars_t)
             if self.use_gpu:
                 viterbivars_t = viterbivars_t.cuda()
@@ -532,7 +533,7 @@ class BiLSTM_CRF(nn.Module):
         best_tag_id = argmax(terminal_var.unsqueeze(0))
         path_score = terminal_var[best_tag_id]
 
-        # Follow the back pointers to decode the best path.
+        # Follow the back pointers to decode the best path. 逆向生成路径
         best_path = [best_tag_id]
         for bptrs_t in reversed(backpointers):
             best_tag_id = bptrs_t[best_tag_id]
@@ -809,8 +810,6 @@ def adjust_learning_rate(optimizer, lr):
         param_group['lr'] = lr
 
 
-# Training Step
-
 def main():
     # Load data and preprocess
     train_sentences = load_sentences(parameters['train'], parameters['zeros'])
@@ -826,13 +825,13 @@ def main():
     test_data = prepare_dataset(test_sentences, word_to_id, char_to_id, tag_to_id, parameters['lower'])
     print("{} / {} / {} sentences in train / dev / test.".format(len(train_data), len(dev_data), len(test_data)))
     # Load Word Embeddings
-    # word_embeds = load_wordvec(word_to_id, tag_to_id, char_to_id)
-    with open(mapping_file, 'rb') as f:
-        mappings = pickle.load(f)
-        # word_to_id = mappings.word_to_id
-        # tag_to_id = mappings.tag_to_id
-        # char_to_id = mappings.char_to_id
-        word_embeds = mappings['word_embeds']
+    word_embeds = load_wordvec(word_to_id, tag_to_id, char_to_id)
+    # with open(mapping_file, 'rb') as f:
+    #     mappings = pickle.load(f)
+    #     # word_to_id = mappings.word_to_id
+    #     # tag_to_id = mappings.tag_to_id
+    #     # char_to_id = mappings.char_to_id
+    #     word_embeds = mappings['word_embeds']
     model = BiLSTM_CRF(vocab_size=len(word_to_id),
                        tag_to_ix=tag_to_id,
                        embedding_dim=parameters['word_dim'],
