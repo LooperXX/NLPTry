@@ -12,9 +12,10 @@ stopwords_english = stopwords.words('english')
 # 考虑用频度阈值和停用词表进行过滤 http://www.cnblogs.com/amiza/p/10407801.html
 
 class SAOMR:
-    def __init__(self, path='data/train.tsv', classes=5):
+    def __init__(self, path='data/train.tsv', classes=5, shuffle=True):
         self.path = path
         self.classes = classes
+        self.shuffle = shuffle
         self.pre_process()
 
     def shuffle_data(self):

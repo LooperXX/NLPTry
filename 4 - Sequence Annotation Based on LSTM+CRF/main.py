@@ -2,7 +2,6 @@ from __future__ import print_function
 from collections import OrderedDict
 import torch
 import torch.nn as nn
-from torch import autograd
 import time
 import pickle
 import urllib

@@ -1,5 +1,5 @@
 # Sequence Annotation Based on LSTM+CRF
-Based on [Pytorch](https://github.com/pytorch/pytorch) and [TorchText](https://github.com/pytorch/text)
+Based on [Pytorch](https://github.com/pytorch/pytorch)
 - [Dataset](https://www.clips.uantwerpen.be/conll2003/ner/)
     - Concentrate on four types of named entities: persons, locations, organizations and names of miscellaneous entities that do not belong to the previous three groups.
         - PER LOC ORG MISC
@@ -138,11 +138,7 @@ y^{*}=\underset{y \in \mathcal{Y}(\mathbf{z})}{\operatorname{argmax}} p(\boldsym
 $$
 对于一个序列CRF模型(只考虑两个连续标签之间的交互作用)，采用`Viterbi`算法可以有效地解决训练和解码问题。
 
-$$% <![CDATA[
-\begin{align*}
-C(y_1, \ldots, y_m) &= b[y_1] &+ \sum_{t=1}^{m} s_t [y_t] &+ \sum_{t=1}^{m-1} T[y_{t}, y_{t+1}] &+ e[y_m] \\
-                    &= \text{begin} &+ \text{scores} &+ \text{transitions} &+ \text{end}
-\end{align*} %]]>$$
+$$ \begin{align*} C(y_1, \ldots, y_m) &= b[y_1] &+ \sum_{t=1}^{m} s_t [y_t] &+ \sum_{t=1}^{m-1} T[y_{t}, y_{t+1}] &+ e[y_m] \\ &= \text{begin} &+ \text{scores} &+ \text{transitions} &+ \text{end} \end{align*}$$
 
 ##### BLSTM-CNNs-CRF
 

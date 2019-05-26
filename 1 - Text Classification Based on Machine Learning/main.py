@@ -9,6 +9,7 @@ from nltk.corpus import stopwords
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from data import SAOMR
+
 stopwords_english = stopwords.words('english')
 np.random.seed(7)
 
@@ -228,6 +229,7 @@ def load_file(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
 
+
 def predict_test(path, parameters, dataset, feature):
     df_train = pd.read_csv(path, sep='\t')
     # clean, tokenize and lemmatize
@@ -245,9 +247,10 @@ def predict_test(path, parameters, dataset, feature):
         words_list.append(lemma_words)
     X_data = np.array(words_list)
     predict_label, _ = predict_labels(X_data, None, parameters, feature)
-    sub_file = pd.read_csv('data/sampleSubmission.csv',sep=',')
+    sub_file = pd.read_csv('data/sampleSubmission.csv', sep=',')
     sub_file.Sentiment = predict_label
-    sub_file.to_csv('Submission.csv',index=False)
+    sub_file.to_csv('Submission.csv', index=False)
+
 
 def main():
     # batch32_bagofwords_shuffle_lr0.01_epoch100_hidden128
@@ -274,11 +277,5 @@ def main():
     predict_test('test.tsv', parameters, dataset, feature)
 
 
-
-    parameters = two_layer_model(dataset.X_train, dataset.Y_train, dataset.X_validate, dataset.Y_validate, layers_dims,
-                                 learning_rate, epochs, feature, print_cost=True, batch_size=batch_size)
-    # accuracy = predict_labels(dataset.X_test, dataset.Y_test, parameters, feature)
-    # print('test_accuracy', accuracy)
-    predict_test('../input/test.tsv', parameters, dataset, feature)
 if __name__ == "__main__":
     main()

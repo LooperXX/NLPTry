@@ -240,7 +240,7 @@ def get_perplexity(data, word2ix, ix2word):
     return np.power(perplexity, - 1. / Tn)
 
 def main():
-    # t.set_default_dtype(t.float64) # RuntimeError: cuDNN error: CUDNN_STATUS_EXECUTION_FAILED
+    t.set_default_dtype(t.float64) # RuntimeError: cuDNN error: CUDNN_STATUS_EXECUTION_FAILED
     data, word2ix, ix2word = get_data(filepath)
     # train(data, word2ix, ix2word)
     perplexity = get_perplexity(data, word2ix, ix2word)

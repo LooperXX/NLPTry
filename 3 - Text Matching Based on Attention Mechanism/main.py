@@ -38,7 +38,6 @@ embedding_source_path = '../../GoogleNews-vectors-negative300.bin'
 embedding_path = './data/embedding.pkl'
 load_model_path = None
 
-
 #################################################
 
 # Read word embedding from binary file
@@ -631,18 +630,18 @@ class ModelRun(object):
 
 def main():
     ## Preprocess
-    ## collect vocabulary of SNLI set
-    # snli = SNLI(None, data_source_path)
-    # print('init vocab finish')
-    # # read word embedding
-    # embedding = WordEmbedding(embedding_source_path, snli.vocab)
-    # pickle.dump(embedding, open(embedding_path, 'wb'))
-    # print('init embedding finish')
-    # # create SNLI dataset
-    # snli = SNLI(embedding, data_source_path)
-    # train_set, dev_set, test_set = snli.create_padding_set()
-    # pickle.dump([train_set, dev_set, test_set], open(data_path, 'wb'))
-    # print('init dataset finish')
+    # collect vocabulary of SNLI set
+    snli = SNLI(None, data_source_path)
+    print('init vocab finish')
+    # read word embedding
+    embedding = WordEmbedding(embedding_source_path, snli.vocab)
+    pickle.dump(embedding, open(embedding_path, 'wb'))
+    print('init embedding finish')
+    # create SNLI dataset
+    snli = SNLI(embedding, data_source_path)
+    train_set, dev_set, test_set = snli.create_padding_set()
+    pickle.dump([train_set, dev_set, test_set], open(data_path, 'wb'))
+    print('init dataset finish')
     # Load pre-trained word embeddings and the SNLI dataset
     embedding = pickle.load(open(embedding_path, 'rb'))
     dataset = pickle.load(open(data_path, 'rb'))
