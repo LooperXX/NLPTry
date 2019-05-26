@@ -6,6 +6,8 @@
 
 各Task内的`md`文件对学习亦有帮助，本文件是对其重要内容整合
 
+`Github`的`md`不支持`Latex`公式渲染，可本地使用`Typora`等软件查看
+
 ## Content
 
 The implementation of basic model in the following tasks:
