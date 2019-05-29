@@ -56,6 +56,7 @@ The implementation of basic model in the following tasks:
     -   ![1558859908779](imgs/1558859908779.png)
     -   ![1559050316959](imgs/1559050316959.png)
     -   ![1559050326087](imgs/1559050326087.png)
+    -   ![1559132667966](imgs/1559132667966.png)
 
 ### Task 2: 基于深度学习的文本分类
 
@@ -499,9 +500,12 @@ $$
 -   [Ohio University Homework](https://github.com/qfettes/ReasoningAboutEntailmentWithNeuralAttention)
 -   [entailment-neural-attention-lstm-tf](<https://github.com/borelien/entailment-neural-attention-lstm-tf/blob/master/python/network.py>)
 -   [使用RNN解决NLP中序列标注问题的通用优化思路](<https://blog.csdn.net/malefactor/article/details/50725480>)
+-   [一文详解深度学习在命名实体识别(NER)中的应用](http://www.52nlp.cn/%E4%B8%80%E6%96%87%E8%AF%A6%E8%A7%A3%E6%B7%B1%E5%BA%A6%E5%AD%A6%E4%B9%A0%E5%9C%A8%E5%91%BD%E5%90%8D%E5%AE%9E%E4%BD%93%E8%AF%86%E5%88%ABner%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8)
 -   [Implementation of BiLSTM-CNNs-CRF](<https://github.com/jayavardhanr/End-to-end-Sequence-Labeling-via-Bi-directional-LSTM-CNNs-CRF-Tutorial>)
 -   [ADVANCED: MAKING DYNAMIC DECISIONS AND THE BI-LSTM CRF](<https://pytorch.org/tutorials/beginner/nlp/advanced_tutorial.html#sphx-glr-beginner-nlp-advanced-tutorial-py>)
 -   [CRFS](<http://www.cs.columbia.edu/~mcollins/crf.pdf>)
+-   [概率图模型学习笔记：HMM、MEMM、CRF](<https://www.zhihu.com/question/35866596/answer/236886066>)
+-   [采样方法](<https://blog.csdn.net/Dark_Scope/article/details/70992266>) [采样方法](<https://blog.csdn.net/Dark_Scope/article/details/78937731>)
 -   [Viterbi-Algorithm（维特比）算法](<https://blog.csdn.net/meiqi0538/article/details/80960128>)
 -   [论文笔记：[ACL2016]End-to-end Sequence Labeling via Bi-directional LSTM-CNNs-CRF](<https://blog.csdn.net/youngdreamnju/article/details/54346658>)
 -   [通俗理解BiLSTM-CRF命名实体识别模型中的CRF层](https://www.cnblogs.com/createMoMo/p/7529885.html)
