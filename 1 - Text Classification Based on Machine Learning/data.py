@@ -44,7 +44,7 @@ class SAOMR:
         res = np.zeros(self.vocab_size)
         for word in sen:
             if self.word2index.__contains__(word):
-                res[self.word2index[word]] = 1
+                res[self.word2index[word]] += 1
         return res
 
     def sen_to_ngram(self, sen):
@@ -54,12 +54,12 @@ class SAOMR:
             for j in range(len(sen) - 2):
                 temp = ' '.join(sen[j:j + 3])
                 if self.ngram2index.__contains__(temp):
-                    res[self.ngram2index[temp]] = 1
+                    res[self.ngram2index[temp]] += 1
         elif len(sen) >= 2:
             for j in range(len(sen) - 1):
                 temp = ' '.join(sen[j:j + 2])
                 if self.ngram2index.__contains__(temp):
-                    res[self.ngram2index[temp]] = 1
+                    res[self.ngram2index[temp]] += 1
         return res
 
     def convert_to_onehot(self):
@@ -80,7 +80,7 @@ class SAOMR:
             for i in lemma_words:
                 if i not in stopwords_english:  # delete stopwords
                     words.append(i)
-            words_list.append(lemma_words)
+            words_list.append(words)
         self.X_data = np.array(words_list)
         self.Y_data = np.array(df_train.Sentiment)
         self.shuffle_data()
